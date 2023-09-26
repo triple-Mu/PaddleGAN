@@ -301,6 +301,7 @@ class NAFBlock(nn.Layer):
 
 @GENERATORS.register()
 class NAFNet(nn.Layer):
+    export = True
 
     def __init__(self,
                  img_channel=3,
@@ -351,11 +352,12 @@ class NAFNet(nn.Layer):
             self.decoders.append(
                 nn.Sequential(*[NAFBlock(chan) for _ in range(num)]))
 
-        self.padder_size = 2**len(self.encoders)
+        self.padder_size = 2 ** len(self.encoders)
 
     def forward(self, inp):
         B, C, H, W = inp.shape
-        inp = self.check_image_size(inp)
+        if not self.export:
+            inp = self.check_image_size(inp)
 
         x = self.intro(inp)
 
@@ -375,6 +377,8 @@ class NAFNet(nn.Layer):
 
         x = self.ending(x)
         x = x + inp
+        if self.export:
+            return x
 
         return x[:, :, :H, :W]
 
