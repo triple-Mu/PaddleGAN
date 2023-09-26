@@ -72,4 +72,6 @@ log_config:
 
 snapshot_config:
   interval: 100
-  save_best: True
+  save_best:
+    path: output_dir/records
+
