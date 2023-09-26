@@ -93,6 +93,7 @@ class Trainer:
         self.log_interval = cfg.log_config.interval
         self.visual_interval = cfg.log_config.visiual_interval
         self.weight_interval = cfg.snapshot_config.interval
+        self.save_best = cfg.snapshot_config.get('save_best', False)
 
         self.start_epoch = 1
         self.current_epoch = 1
@@ -320,6 +321,22 @@ class Trainer:
             for metric_name, metric in self.metrics.items():
                 self.logger.info("Metric {}: {:.4f}".format(
                     metric_name, metric.accumulate()))
+                if self.save_best:
+                    _time = datetime.datetime.now().strftime('%Y-%m-%d|%H:%M')
+                    if not hasattr(self, 'psnr_score'):
+                        self.psnr_score = 0
+                    if not hasattr(self, 'ssim_score'):
+                        self.ssim_score = 0
+                    _psnr = self.metrics['psnr'].accumulate()
+                    _ssim = self.metrics['ssim'].accumulate()
+                    if _psnr > self.psnr_score:
+                        self.psnr_score = _psnr
+                        self.save(f'{_time}_{self.psnr_score}_best_psnr', 'weight', keep=0)
+                        self.save(f'{_time}_{self.psnr_score}_best_psnr')
+                    if _ssim > self.ssim_score:
+                        self.ssim_score = _ssim
+                        self.save(f'{_time}_{self.ssim_score}_best_ssim', 'weight', keep=0)
+                        self.save(f'{_time}_{self.ssim_score}_best_ssim')
 
     def print_log(self):
         losses = self.model.get_current_losses()
