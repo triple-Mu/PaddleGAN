@@ -1,5 +1,5 @@
-total_iters: 40000
-output_dir: output_dir
+total_iters: 50000
+output_dir: work_dirs/nafnet_n
 
 model:
   name: NAFNetModel
@@ -11,7 +11,7 @@ model:
     middle_blk_num: 1
     dec_blk_nums: [2, 2, 2, 2]
   psnr_criterion:
-    name: PSNRLoss
+    name: L1Loss # L1Loss CharbonnierLoss PSNRLoss SSIM
 
 dataset:
   train:
@@ -37,7 +37,7 @@ export_model:
 lr_scheduler:
   name: CosineAnnealingRestartLR
   learning_rate: 0.001
-  periods: [40000]
+  periods: [50000]
   restart_weights: [1]
   eta_min: !!float 8e-7
 
@@ -73,4 +73,4 @@ log_config:
 snapshot_config:
   interval: 200
   save_best:
-    path: output_dir/records
+    path: training/records
