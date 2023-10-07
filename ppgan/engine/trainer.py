@@ -93,6 +93,7 @@ class Trainer:
         self.log_interval = cfg.log_config.interval
         self.visual_interval = cfg.log_config.visiual_interval
         self.weight_interval = cfg.snapshot_config.interval
+        self.save_best = cfg.snapshot_config.get('save_best', {})
 
         self.start_epoch = 1
         self.current_epoch = 1
@@ -320,6 +321,26 @@ class Trainer:
             for metric_name, metric in self.metrics.items():
                 self.logger.info("Metric {}: {:.4f}".format(
                     metric_name, metric.accumulate()))
+                if self.save_best:
+                    _time = datetime.datetime.now().strftime('%Y-%m-%d|%H:%M')
+                    if not hasattr(self, 'psnr_score'):
+                        self.psnr_score = 0
+                    if not hasattr(self, 'ssim_score'):
+                        self.ssim_score = 0
+                    _psnr = self.metrics['psnr'].accumulate()
+                    _ssim = self.metrics['ssim'].accumulate()
+                    if _psnr > self.psnr_score or _ssim > self.ssim_score:
+                        self.psnr_score = _psnr
+                        self.ssim_score = _ssim
+                        if self.local_rank == 0:
+                            state_dicts = {}
+                            save_path = self.save_best.get('path', 'tmp_path')
+                            os.makedirs(save_path, exist_ok=True)
+                            for net_name, net in self.model.nets.items():
+                                state_dicts[net_name] = net.state_dict()
+                            file_name = f'iter_{self.current_iter}|{_time}_psnr_{self.psnr_score}_ssim_{self.ssim_score}.pdparams'
+                            save_path = os.path.join(save_path, file_name)
+                            save(state_dicts, save_path)
 
     def print_log(self):
         losses = self.model.get_current_losses()

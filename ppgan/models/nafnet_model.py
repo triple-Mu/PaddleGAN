@@ -60,7 +60,7 @@ class NAFNetModel(BaseModel):
 
         loss.backward()
         optims['optim'].step()
-        self.losses['loss'] = loss.numpy()
+        self.losses['loss'] = loss.item()
 
     def forward(self):
         pass
