@@ -170,6 +170,48 @@ class SimpleGate(nn.Layer):
         return x1 * x2
 
 
+def fuse(conv, bn):  # 将conv, bn传递进来
+
+    # 构建conv, bn融合后的新卷积fused
+    # 因为融合后，只是权重核偏置发生变化，故输入通道数、输出通道数、卷积核大小等参数不变
+    fused = nn.Conv2D(
+        conv._in_channels,
+        conv._out_channels,
+        kernel_size=conv._kernel_size,
+        stride=conv._stride,
+        padding=conv._padding,
+        groups=conv._groups,
+        bias_attr=True
+    )
+
+    # 修改权重部分
+    # 克隆原卷积中权重，统一权重shape
+    w_conv = conv.weight.clone()
+    w_conv = paddle.reshape(w_conv, [conv._out_channels, -1])
+    # 公式8操作
+    w_bn = paddle.diag(bn.weight.divide(paddle.sqrt(bn._epsilon + bn._variance)))
+    w_bn_conv = paddle.mm(w_bn, w_conv)
+    # 再次统一权重shape
+    w_bn_conv = paddle.reshape(w_bn_conv, fused.weight.shape)
+    # 通过set_value()载入融合后的权重
+    fused.weight.set_value(w_bn_conv)
+
+    # 修改偏置部分
+    # 判断卷积是否有偏置
+    if conv.bias is not None:
+        # 有偏置，公式9前半部分
+        b_conv = paddle.multiply(conv.bias, bn.weight.divide(paddle.sqrt(bn._variance + bn._epsilon)))
+    else:
+        # 没有就是加0
+        b_conv = paddle.zeros(shape=[conv.weight.shape[0]])
+    # 公式9后半部分
+    b_bn = bn.bias - bn.weight.multiply(bn._mean).divide(paddle.sqrt(bn._variance + bn._epsilon))
+    # 通过set_value()载入融合后的偏置
+    fused.bias.set_value(b_conv + b_bn)
+
+    return fused
+
+
 class ConvBNSiLU(nn.Layer):
     def __init__(self,
                  in_channels,
@@ -189,9 +231,17 @@ class ConvBNSiLU(nn.Layer):
                               bias_attr=bias_attr)
         self.bn = nn.BatchNorm2D(out_channels)
         self.act = nn.Silu()
+        self.is_switched = False
 
     def forward(self, x):
         return self.act(self.bn(self.conv(x)))
+
+    def switch(self):
+        if self.is_switched:
+            return
+        self.conv = fuse(self.conv, self.bn)
+        self.bn = nn.Identity()
+        self.is_switched = True
 
 
 class NAFBlock(nn.Layer):
@@ -205,7 +255,7 @@ class NAFBlock(nn.Layer):
                                 padding=0,
                                 stride=1,
                                 groups=1,
-                                bias_attr=True)
+                                bias_attr=False)
 
         self.conv2 = ConvBNSiLU(in_channels=dw_channel,
                                 out_channels=dw_channel,
@@ -213,14 +263,14 @@ class NAFBlock(nn.Layer):
                                 padding=1,
                                 stride=1,
                                 groups=dw_channel,
-                                bias_attr=True)
+                                bias_attr=False)
         self.conv3 = ConvBNSiLU(in_channels=dw_channel // 2,
                                 out_channels=c,
                                 kernel_size=1,
                                 padding=0,
                                 stride=1,
                                 groups=1,
-                                bias_attr=True)
+                                bias_attr=False)
 
         # Simplified Channel Attention
         self.sca = nn.Sequential(
@@ -244,14 +294,14 @@ class NAFBlock(nn.Layer):
                                 padding=0,
                                 stride=1,
                                 groups=1,
-                                bias_attr=True)
+                                bias_attr=False)
         self.conv5 = ConvBNSiLU(in_channels=ffn_channel // 2,
                                 out_channels=c,
                                 kernel_size=1,
                                 padding=0,
                                 stride=1,
                                 groups=1,
-                                bias_attr=True)
+                                bias_attr=False)
 
         self.norm1 = LayerNorm2D(c)
         self.norm2 = LayerNorm2D(c)
