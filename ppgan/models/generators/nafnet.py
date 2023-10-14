@@ -9,63 +9,105 @@ from paddle.autograd import PyLayer
 
 from .builder import GENERATORS
 
+USE_CUSTOM = False
 
-class LayerNormFunction(PyLayer):
+if USE_CUSTOM:
+    class LayerNormFunction(PyLayer):
 
-    @staticmethod
-    def forward(ctx, x, weight, bias, eps):
-        ctx.eps = eps
-        N, C, H, W = x.shape
-        mu = x.mean(1, keepdim=True)
-        var = (x - mu).pow(2).mean(1, keepdim=True)
-        y = (x - mu) / (var + eps).sqrt()
-        ctx.save_for_backward(y, var, weight)
-        y = weight.reshape([1, C, 1, 1]) * y + bias.reshape([1, C, 1, 1])
-        return y
-
-    @staticmethod
-    def backward(ctx, grad_output):
-        eps = ctx.eps
-
-        N, C, H, W = grad_output.shape
-        y, var, weight = ctx.saved_tensor()
-        g = grad_output * weight.reshape([1, C, 1, 1])
-        mean_g = g.mean(axis=1, keepdim=True)
-
-        mean_gy = (g * y).mean(axis=1, keepdim=True)
-        gx = 1. / paddle.sqrt(var + eps) * (g - y * mean_gy - mean_g)
-        return gx, (grad_output * y).sum(axis=3).sum(axis=2).sum(
-            axis=0), grad_output.sum(axis=3).sum(axis=2).sum(axis=0)
-
-
-class LayerNorm2D(nn.Layer):
-
-    def __init__(self, channels, eps=1e-6):
-        super(LayerNorm2D, self).__init__()
-        self.add_parameter(
-            'weight',
-            self.create_parameter(
-                [channels],
-                default_initializer=paddle.nn.initializer.Constant(value=1.0)))
-        self.add_parameter(
-            'bias',
-            self.create_parameter(
-                [channels],
-                default_initializer=paddle.nn.initializer.Constant(value=0.0)))
-        self.eps = eps
-
-    def forward(self, x):
-        if self.training:
-            y = LayerNormFunction.apply(x, self.weight, self.bias, self.eps)
-        else:
+        @staticmethod
+        def forward(ctx, x, weight, bias, eps):
+            ctx.eps = eps
             N, C, H, W = x.shape
             mu = x.mean(1, keepdim=True)
             var = (x - mu).pow(2).mean(1, keepdim=True)
-            y = (x - mu) / (var + self.eps).sqrt()
-            y = self.weight.reshape([1, C, 1, 1]) * y + self.bias.reshape(
-                [1, C, 1, 1])
+            y = (x - mu) / (var + eps).sqrt()
+            ctx.save_for_backward(y, var, weight)
+            y = weight.reshape([1, C, 1, 1]) * y + bias.reshape([1, C, 1, 1])
+            return y
 
-        return y
+        @staticmethod
+        def backward(ctx, grad_output):
+            eps = ctx.eps
+
+            N, C, H, W = grad_output.shape
+            y, var, weight = ctx.saved_tensor()
+            g = grad_output * weight.reshape([1, C, 1, 1])
+            mean_g = g.mean(axis=1, keepdim=True)
+
+            mean_gy = (g * y).mean(axis=1, keepdim=True)
+            gx = 1. / paddle.sqrt(var + eps) * (g - y * mean_gy - mean_g)
+            return gx, (grad_output * y).sum(axis=3).sum(axis=2).sum(
+                axis=0), grad_output.sum(axis=3).sum(axis=2).sum(axis=0)
+
+
+    class LayerNorm2D(nn.Layer):
+
+        def __init__(self, channels, eps=1e-6):
+            super(LayerNorm2D, self).__init__()
+            self.add_parameter(
+                'weight',
+                self.create_parameter(
+                    [channels],
+                    default_initializer=paddle.nn.initializer.Constant(value=1.0)))
+            self.add_parameter(
+                'bias',
+                self.create_parameter(
+                    [channels],
+                    default_initializer=paddle.nn.initializer.Constant(value=0.0)))
+            self.eps = eps
+
+        def forward(self, x):
+            if self.training:
+                y = LayerNormFunction.apply(x, self.weight, self.bias, self.eps)
+            else:
+                N, C, H, W = x.shape
+                mu = x.mean(1, keepdim=True)
+                var = (x - mu).pow(2).mean(1, keepdim=True)
+                y = (x - mu) / (var + self.eps).sqrt()
+                y = self.weight.reshape([1, C, 1, 1]) * y + self.bias.reshape(
+                    [1, C, 1, 1])
+
+            return y
+
+
+else:
+    class LayerNorm2D(nn.Layer):
+
+        def __init__(self, channels, eps=1e-6):
+            super(LayerNorm2D, self).__init__()
+            self.add_parameter(
+                'weight',
+                self.create_parameter(
+                    [channels],
+                    default_initializer=paddle.nn.initializer.Constant(value=1.0)))
+            self.add_parameter(
+                'bias',
+                self.create_parameter(
+                    [channels],
+                    default_initializer=paddle.nn.initializer.Constant(value=0.0)))
+            self._normalized_shape = [channels]
+            self._epsilon = eps
+
+        def forward(self, input):
+            if self.training:
+                input = input.transpose([0, 2, 3, 1])
+                input = F.layer_norm(
+                    input,
+                    normalized_shape=self._normalized_shape,
+                    weight=self.weight,
+                    bias=self.bias,
+                    epsilon=self._epsilon,
+                )
+                input = input.transpose([0, 3, 1, 2])
+                return input
+            else:
+                N, C, H, W = input.shape
+                mu = input.mean(1, keepdim=True)
+                var = (input - mu).pow(2).mean(1, keepdim=True)
+                y = (input - mu) / (var + self._epsilon).sqrt()
+                y = self.weight.reshape([1, C, 1, 1]) * y + self.bias.reshape(
+                    [1, C, 1, 1])
+                return y
 
 
 class AvgPool2D(nn.Layer):
