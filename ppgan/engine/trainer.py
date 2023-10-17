@@ -93,6 +93,7 @@ class Trainer:
         self.log_interval = cfg.log_config.interval
         self.visual_interval = cfg.log_config.visiual_interval
         self.weight_interval = cfg.snapshot_config.interval
+        self.txt = cfg.snapshot_config.txt
 
         self.start_epoch = 1
         self.current_epoch = 1
@@ -257,7 +258,7 @@ class Trainer:
                 self.test()
 
             if self.current_iter % self.weight_interval == 0:
-                self.save(self.current_iter, 'weight', keep=-1)
+                self.save(self.current_iter, 'weight', keep=100)
                 self.save(self.current_iter)
 
             self.current_iter += 1
@@ -317,9 +318,13 @@ class Trainer:
                             is_save_image=True)
 
         if self.metrics:
-            for metric_name, metric in self.metrics.items():
-                self.logger.info("Metric {}: {:.4f}".format(
-                    metric_name, metric.accumulate()))
+            with open(self.txt, 'a+') as f:
+                f.write(f'iter: {self.current_iter}\t')
+                for metric_name, metric in self.metrics.items():
+                    self.logger.info("Metric {}: {:.4f}".format(
+                        metric_name, metric.accumulate()))
+                    f.write(f'{metric_name}: {metric.accumulate():.4f}\t')
+                f.write('\n')
 
     def print_log(self):
         losses = self.model.get_current_losses()
@@ -443,12 +448,12 @@ class Trainer:
                 if self.by_epoch:
                     checkpoint_name_to_be_removed = os.path.join(
                         self.output_dir, 'epoch_%s_%s.pdparams' %
-                        ((epoch - keep * self.weight_interval) //
-                         self.iters_per_epoch, name))
+                                         ((epoch - keep * self.weight_interval) //
+                                          self.iters_per_epoch, name))
                 else:
                     checkpoint_name_to_be_removed = os.path.join(
                         self.output_dir, 'iter_%s_%s.pdparams' %
-                        (epoch - keep * self.weight_interval, name))
+                                         (epoch - keep * self.weight_interval, name))
 
                 if os.path.exists(checkpoint_name_to_be_removed):
                     os.remove(checkpoint_name_to_be_removed)

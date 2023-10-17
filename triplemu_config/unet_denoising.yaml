@@ -1,0 +1,76 @@
+total_iters: 40000
+output_dir: output_dir
+
+model:
+  name: NAFNetModel
+  generator:
+    name: TripleMuUnet
+    input_nc: 3
+    output_nc: 3
+    num_downs: 8
+    ngf: 16
+    norm_type: batch
+    use_dropout: false
+  psnr_criterion:
+    name: CharbonnierLoss # L1Loss CharbonnierLoss PSNRLoss SSIM
+
+dataset:
+  train:
+    name: NAFNetTrain
+    rgb_dir: data/SIDD/train
+    # TODO fix out of memory for val while training
+    num_workers: 8
+    batch_size: 32 # 8GPU
+    img_options:
+      patch_size: 1024
+  test:
+    name: NAFNetVal
+    rgb_dir: data/SIDD/val
+    # TODO fix out of memory for val while training
+    num_workers: 4
+    batch_size: 32
+    img_options:
+      patch_size: 1024
+
+export_model:
+  - {name: 'generator', inputs_num: 1}
+
+lr_scheduler:
+  name: CosineAnnealingRestartLR
+  learning_rate: 0.001
+  periods: [40000]
+  restart_weights: [1]
+  eta_min: !!float 8e-7
+
+validate:
+  interval: 100
+  save_img: false
+
+  metrics:
+    psnr: # metric name, can be arbitrary
+      name: PSNR
+      crop_border: 4
+      test_y_channel: True
+    ssim:
+      name: SSIM
+      crop_border: 4
+      test_y_channel: True
+
+optimizer:
+  name: AdamW
+  # add parameters of net_name to optim
+  # name should in self.nets
+  net_names:
+    - generator
+  weight_decay: 0.0
+  beta1: 0.9
+  beta2: 0.9
+  epsilon: 1e-8
+
+log_config:
+  interval: 50
+  visiual_interval: 5000000
+
+snapshot_config:
+  interval: 100
+  txt: train_log.txt
