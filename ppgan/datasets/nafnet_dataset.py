@@ -9,7 +9,8 @@ from PIL import Image
 
 from paddle.io import Dataset
 from .builder import DATASETS
-from paddle.vision.transforms.functional import to_tensor, adjust_brightness, adjust_saturation, rotate, hflip, hflip, vflip, center_crop
+from paddle.vision.transforms.functional import to_tensor, adjust_brightness, adjust_saturation, rotate, hflip, hflip, \
+    vflip, center_crop
 
 
 def is_image_file(filename):
@@ -18,10 +19,16 @@ def is_image_file(filename):
         for extension in ['jpeg', 'JPEG', 'jpg', 'png', 'JPG', 'PNG', 'gif'])
 
 
+def is_npy_file(filename):
+    return any(
+        filename.endswith(extension)
+        for extension in ['npy', 'NPY'])
+
+
 @DATASETS.register()
 class NAFNetTrain(Dataset):
 
-    def __init__(self, rgb_dir, img_options=None):
+    def __init__(self, rgb_dir, img_options=None, is_npy: bool = False):
         super(NAFNetTrain, self).__init__()
 
         inp_files = sorted(os.listdir(os.path.join(rgb_dir, 'input')))
@@ -29,14 +36,15 @@ class NAFNetTrain(Dataset):
 
         self.inp_filenames = [
             os.path.join(rgb_dir, 'input', x) for x in inp_files
-            if is_image_file(x)
+            if (is_npy_file(x) if is_npy else is_image_file(x))
         ]
         self.tar_filenames = [
             os.path.join(rgb_dir, 'target', x) for x in tar_files
-            if is_image_file(x)
+            if (is_npy_file(x) if is_npy else is_image_file(x))
         ]
 
         self.img_options = img_options
+        self.is_npy = is_npy
         self.sizex = len(self.tar_filenames)  # get the size of target
 
         self.ps = self.img_options['patch_size']
@@ -51,8 +59,12 @@ class NAFNetTrain(Dataset):
         inp_path = self.inp_filenames[index_]
         tar_path = self.tar_filenames[index_]
 
-        inp_img = Image.open(inp_path)
-        tar_img = Image.open(tar_path)
+        if self.is_npy:
+            inp_img = Image.fromarray(np.load(inp_path))
+            tar_img = Image.fromarray(np.load(tar_path))
+        else:
+            inp_img = Image.open(inp_path)
+            tar_img = Image.open(tar_path)
 
         w, h = tar_img.size
         padw = ps - w if w < ps else 0
@@ -120,7 +132,7 @@ class NAFNetTrain(Dataset):
 @DATASETS.register()
 class NAFNetVal(Dataset):
 
-    def __init__(self, rgb_dir, img_options=None, rgb_dir2=None):
+    def __init__(self, rgb_dir, img_options=None, rgb_dir2=None, is_npy: bool = False):
         super(NAFNetVal, self).__init__()
 
         inp_files = sorted(os.listdir(os.path.join(rgb_dir, 'input')))
@@ -128,14 +140,15 @@ class NAFNetVal(Dataset):
 
         self.inp_filenames = [
             os.path.join(rgb_dir, 'input', x) for x in inp_files
-            if is_image_file(x)
+            if (is_npy_file(x) if is_npy else is_image_file(x))
         ]
         self.tar_filenames = [
             os.path.join(rgb_dir, 'target', x) for x in tar_files
-            if is_image_file(x)
+            if (is_npy_file(x) if is_npy else is_image_file(x))
         ]
 
         self.img_options = img_options
+        self.is_npy = is_npy
         self.sizex = len(self.tar_filenames)  # get the size of target
 
         self.ps = self.img_options['patch_size']
@@ -150,8 +163,12 @@ class NAFNetVal(Dataset):
         inp_path = self.inp_filenames[index_]
         tar_path = self.tar_filenames[index_]
 
-        inp_img = Image.open(inp_path)
-        tar_img = Image.open(tar_path)
+        if self.is_npy:
+            inp_img = Image.fromarray(np.load(inp_path))
+            tar_img = Image.fromarray(np.load(tar_path))
+        else:
+            inp_img = Image.open(inp_path)
+            tar_img = Image.open(tar_path)
 
         # Validate on center crop
         if self.ps is not None:
@@ -169,25 +186,30 @@ class NAFNetVal(Dataset):
 @DATASETS.register()
 class NAFNetTest(Dataset):
 
-    def __init__(self, inp_dir, img_options):
+    def __init__(self, inp_dir, img_options, is_npy: bool = False):
         super(NAFNetTest, self).__init__()
 
         inp_files = sorted(os.listdir(inp_dir))
         self.inp_filenames = [
-            os.path.join(inp_dir, x) for x in inp_files if is_image_file(x)
+            os.path.join(inp_dir, x) for x in inp_files
+            if (is_npy_file(x) if is_npy else is_image_file(x))
         ]
 
         self.inp_size = len(self.inp_filenames)
         self.img_options = img_options
+        self.is_npy = is_npy
 
     def __len__(self):
         return self.inp_size
 
     def __getitem__(self, index):
-
         path_inp = self.inp_filenames[index]
         filename = os.path.splitext(os.path.split(path_inp)[-1])[0]
-        inp = Image.open(path_inp)
+
+        if self.is_npy:
+            inp = Image.fromarray(np.load(path_inp))
+        else:
+            inp = Image.open(path_inp)
 
         inp = to_tensor(inp)
         return inp, filename

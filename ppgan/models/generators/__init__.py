@@ -48,3 +48,4 @@ from .gfpganv1_arch import GFPGANv1, StyleGAN2DiscriminatorGFPGAN
 from .invdn import InvDN
 from .nafnet import NAFNet, NAFNetLocal
 from .generater_aotgan import InpaintGenerator
+from .unet_pro import ReconstructiveSubNetwork
